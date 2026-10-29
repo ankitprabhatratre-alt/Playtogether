@@ -1,0 +1,69 @@
+// PlayTogether durable records.
+// Live game state is held in server memory (server-authoritative, low latency);
+// the database stores rooms, players (hashed reconnect tokens), and game sessions/results
+// so invitation links and reconnect tokens survive a server restart.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id           String        @id // 8-char room code
+  name         String
+  passcodeHash String // scrypt hash, never the plain passcode
+  maxPlayers   Int
+  selectedGame String
+  gameSettings Json
+  hostPlayerId String?
+  createdAt    DateTime      @default(now())
+  lastActiveAt DateTime      @default(now())
+  closedAt     DateTime?
+  closeReason  String?
+  players      Player[]
+  sessions     GameSession[]
+
+  @@index([closedAt, lastActiveAt])
+}
+
+model Player {
+  id        String    @id
+  roomId    String
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name      String
+  color     String
+  tokenHash String    @unique // SHA-256 of the reconnect token
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+
+  @@index([roomId])
+}
+
+model GameSession {
+  id           String    @id
+  roomId       String
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  gameId       String
+  settings     Json
+  participants Json
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  endedEarly   Boolean   @default(false)
+  results      Json?
+
+  @@index([roomId])
+}
+
+/// Reference data seeded from the shared game catalog (npm run db:seed).
+model GameDefinition {
+  id         String   @id
+  name       String
+  minPlayers Int
+  maxPlayers Int
+  status     String
+  updatedAt  DateTime @updatedAt
+}
